@@ -1,0 +1,29 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+torch = "==2.6.0"
+datasets = "~=3.5"
+pytest = "~=8.3"
+pytest-asyncio = "~=1.1"
+tokenizers = "~=0.21"
+azure-storage-blob = "~=12.25"
+pytest-mock = "~=3.14"
+wandb = "~=0.20"
+numpy = "~=2.3"
+sphinx = "*"
+sphinx-autoapi = "*"
+psutil = "*"
+pyyaml = "~=6.0"
+
+[dev-packages]
+jupyter = "*"
+jupyterlab = "*"
+ruff = "~=0.11"
+coverage = "*"
+torchvision = "~=0.20"
+
+[requires]
+python_version = "3.12"
