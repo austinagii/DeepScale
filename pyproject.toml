@@ -13,6 +13,7 @@ select = [
     "E",  # pycodestyle errors
     "F",  # pyflakes
     "I",  # isort
+    "D",  # pydocstyle
 ]
 ignore = []
 
@@ -49,6 +50,13 @@ line-ending = "auto"
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "D100",  # Missing docstring in public module
+    "D101",  # Missing docstring in public class
+    "D102",  # Missing docstring in public method
+]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true

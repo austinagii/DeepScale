@@ -1,17 +1,35 @@
+"""Azure Blob Storage client for training artifact management.
+
+This module provides the AzureBlobStorageClient class which implements the StorageClient
+interface for storing and retrieving training configurations and model checkpoints in
+Azure Blob Storage.
+
+Example:
+    >>> from azure.storage.blob import BlobServiceClient
+    >>> from os import environ
+    >>> blob_client = BlobServiceClient.from_connection_string(
+    >>>     environ["AZURE_BLOB_CONNECTION_STRING"]
+    >>> )
+    >>> storage = AzureBlobStorageClient(blob_client, "my-container")
+    >>> storage.init_run("run-123", {"max_epochs": 10})
+"""
+
 import logging
 import os
 from contextlib import contextmanager
-from typing import Any, Optional
+from typing import Any
 
 import yaml
+from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.blob import BlobServiceClient
 
-from deepscale.storage.storage_client import StorageClient
 from deepscale.storage.errors import (
+    ArtifactNotFoundError,
     CheckpointNotFoundError,
-    PersistenceError,
     RunNotFoundError,
+    StorageError,
 )
+from deepscale.storage.storage_client import StorageClient
 
 
 RUN_BASE_PATH_TEMPLATE = "runs/{run_id}"
@@ -24,167 +42,139 @@ logging.getLogger("azure.core").setLevel(logging.WARNING)
 
 
 class AzureBlobStorageClient(StorageClient):
+    """Azure Blob Storage implementation of StorageClient.
+
+    Artifacts managed by this client are stored in Azure Blob Storage as blobs using
+    this structure:
+        runs/{run_id}/config.yaml           - Training configuration (YAML)
+        runs/{run_id}/checkpoints/{tag}.pt  - Model checkpoints (binary)
+
+    Attributes:
+        blob_service_client: The Azure client used to interact with blob storage.
+        container_name: The name of the blob storage container where artifacts are
+            stored and retrieved from.
+    """
+
     def __init__(self, blob_service_client: BlobServiceClient, container_name: str):
+        """Initialize a new AzureBlobStorageInstance.
+
+        Args:
+            blob_service_client: The blob service client instance that this client
+                should use to store and retrieve artifacts.
+            container_name: The blob storage container where artifacts should be stored
+                and retrieved from.
+        """
+        # TODO: Add argument validation. e.g. blob service client not closed, container
+        # name not empty or None etc...
         self.blob_service_client = blob_service_client
         self.container_name = container_name
 
     def init_run(self, run_id: str, train_config: dict[Any, Any]) -> None:
-        """Creates a new run with the specifed training configuration.
-
-        This saves the train configuration as a blob in blob storage under the run
-        container.
-
-        Args:
-            run_id: The unique identifier of the run to be initialized.
-            train_config: The training configuration for this run.
-
-        Returns:
-            None
-        """
+        """An implementation of :meth:`StorageClient.init_run`."""
         config_blob_path = RUN_CONFIG_PATH_TEMPLATE.format(run_id=run_id)
 
-        with disable_tokenizer_parallelism():
-            try:
-                blob_client = self.blob_service_client.get_blob_client(
-                    container=self.container_name, blob=config_blob_path
-                )
-                blob_client.upload_blob(yaml.dump(train_config), overwrite=True)
-            except Exception as e:
-                raise PersistenceError("Failed to initialize the run.", e)
+        self._upload_blob(
+            self.blob_service_client,
+            self.container_name,
+            config_blob_path,
+            yaml.dump(train_config),
+        )
 
     def resume_run(
         self, run_id: str, checkpoint_tag: str
     ) -> tuple[dict[Any, Any], bytes]:
-        # Check if the run config exists. If not, the run does not exist.
+        """An implementation of :meth:`StorageClient.resume_run`."""
         run_config_blob_name = RUN_CONFIG_PATH_TEMPLATE.format(run_id=run_id)
-        run_config_blob_client = self.blob_service_client.get_blob_client(
-            self.container_name, run_config_blob_name
-        )
-        if not run_config_blob_client.exists():
-            raise RunNotFoundError("The specified run could not be found.")
+        try:
+            run_config_data = self._download_blob(
+                self.blob_service_client, self.container_name, run_config_blob_name
+            )
+        except ArtifactNotFoundError:
+            raise RunNotFoundError("The run config could not be found in Azure Blob.")
 
-        # Check if the checkpoint exists.
+        run_config = yaml.safe_load(run_config_data)
+
         checkpoint_blob_name = RUN_CHECKPOINT_PATH_TEMPLATE.format(
             run_id=run_id, checkpoint_tag=checkpoint_tag
         )
-        checkpoint_blob_client = self.blob_service_client.get_blob_client(
-            self.container_name, checkpoint_blob_name
-        )
-        if not checkpoint_blob_client.exists():
+        try:
+            checkpoint = self._download_blob(
+                self.blob_service_client, self.container_name, checkpoint_blob_name
+            )
+        except ArtifactNotFoundError:
             raise CheckpointNotFoundError(
-                "The specified checkpoint could not be found."
+                "The checkpoint could not be found in Azure Blob."
             )
 
-        # Download the run config and checkpoint only after confirming that they both
-        # exist, no point downloading the config if the run does not exist.
-        run_config = yaml.safe_load(run_config_blob_client.download_blob().readall())
-        checkpoint = checkpoint_blob_client.download_blob().readall()
-
         return run_config, checkpoint
-
-    def exists(self, run_id: str, checkpoint_tag: Optional[str] = None) -> bool:
-        """Returns whether the specified run or checkpoint exists in Azure Blob Storage.
-
-        If no checkpoint tag is specified then the function returns whether the
-        specified run exists. If a checkpoint tag is specified then the function
-        returns whether the specified checkpoint for the given run exists.
-
-        Args:
-            run_id: The unique identifier of the run to check
-            checkpoint_tag: Optional tag of a specific checkpoint to check.
-            Defaults to `None`.
-
-        Returns:
-            bool: True if the run/checkpoint exists, False otherwise.
-
-        Raises:
-            PersistenceError: If there is an or checkpoint exists.
-        """
-        blob_client = self.blob_service_client.get_container_client(self.container_name)
-
-        run_exists = False
-        checkpoint_exists = False
-
-        # TODO: Use the blob_clients `exists` method if both run_id and checkpoint_tag
-        # are specified. Should be O(1).
-        with disable_tokenizer_parallelism():
-            try:
-                blob_names = blob_client.list_blob_names()
-            except Exception as e:
-                raise PersistenceError(
-                    "An error occurred while checking if the artifact exists on the "
-                    "remote device",
-                    e,
-                )
-
-        for blob_name in blob_names:
-            if blob_name.startswith(f"runs/{run_id}"):
-                run_exists = True
-                if checkpoint_tag is None:
-                    break
-
-                checkpoint_exists = blob_name.endswith(f"{checkpoint_tag}.pt")
-                if checkpoint_exists:
-                    break
-
-        return run_exists and (checkpoint_tag is None or checkpoint_exists)
 
     def save_checkpoint(
         self, run_id: str, checkpoint_tag: str, checkpoint: bytes
     ) -> None:
-        """Uploads the checkpoint to the remote device"""
+        """An implementation of :meth:`StorageClient.save_checkpoint`."""
         checkpoint_path = RUN_CHECKPOINT_PATH_TEMPLATE.format(
             run_id=run_id, checkpoint_tag=checkpoint_tag
         )
 
-        with disable_tokenizer_parallelism():
-            blob_client = self.blob_service_client.get_blob_client(
-                container=self.container_name, blob=str(checkpoint_path)
-            )
-
-            try:
-                blob_client.upload_blob(checkpoint, overwrite=True)
-            except Exception as e:
-                raise PersistenceError(
-                    "An error occurred while syncing checkpoint to blob storage", e
-                )
+        self._upload_blob(
+            self.blob_service_client, self.container_name, checkpoint_path, checkpoint
+        )
 
     def load_checkpoint(self, run_id: str, checkpoint_tag: str) -> bytes:
-        """Downloads the checkpoint from the remote device."""
+        """An implementation of :meth:`StorageClient.load_checkpoint`."""
         checkpoint_path = RUN_CHECKPOINT_PATH_TEMPLATE.format(
             run_id=run_id, checkpoint_tag=checkpoint_tag
         )
 
-        with disable_tokenizer_parallelism():
-            blob_client = self.blob_service_client.get_blob_client(
-                container=self.container_name, blob=checkpoint_path
+        try:
+            checkpoint = self._download_blob(
+                self.blob_service_client, self.container_name, checkpoint_path
             )
+        except ArtifactNotFoundError:
+            raise CheckpointNotFoundError("Checkpoint could not be found in blob")
+        return checkpoint
+
+    @staticmethod
+    def _upload_blob(
+        blob_service_client: BlobServiceClient,
+        container_name: str,
+        blob_name: str,
+        blob: str | bytes,
+    ) -> None:
+        with disable_tokenizer_parallelism() and blob_service_client.get_blob_client(
+            container=container_name, blob=blob_name
+        ) as blob_client:
             try:
-                checkpoint_exists = blob_client.exists()
+                blob_client.upload_blob(blob, overwrite=True)
             except Exception as e:
-                raise PersistenceError(
-                    "An error occurred while checking if the checkpoint exists on the "
-                    "remote device",
+                raise StorageError(
+                    "An error occurred while uploading the blob to blob storage",
                     e,
                 )
-            if not checkpoint_exists:
-                raise CheckpointNotFoundError("Checkpoint could not be found in blob")
 
+    @staticmethod
+    def _download_blob(
+        blob_service_client: BlobServiceClient, container_name: str, blob_name: str
+    ) -> bytes:
+        with blob_service_client.get_blob_client(
+            container=container_name, blob=blob_name
+        ) as blob_client:
             try:
-                checkpoint = blob_client.download_blob().readall()
+                return blob_client.download_blob().readall()
+            except ResourceNotFoundError:
+                raise ArtifactNotFoundError(
+                    "Artifact could not be found in blob storage."
+                )
             except Exception as e:
-                raise PersistenceError(
-                    "An error occurred while downloading the checkpoint from the remote"
-                    " device",
+                raise StorageError(
+                    "An error occurred while downloading the blob from blob storage",
                     e,
                 )
-
-            return checkpoint
 
 
 @contextmanager
 def disable_tokenizer_parallelism():
-    """Context manager to temporarily disable tokenizers parallelism.
+    """Temporarily disable parallelism for the huggingface tokenizers library.
 
     This prevents fork conflicts with the tokenizers library during blob operations.
     """
