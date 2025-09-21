@@ -1,1 +1,1 @@
-from .errors import PersistenceError, CheckpointNotFoundError, RunNotFoundError
+from .errors import CheckpointNotFoundError, RunNotFoundError, StorageError

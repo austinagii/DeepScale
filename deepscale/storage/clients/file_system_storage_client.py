@@ -3,12 +3,12 @@ from typing import Any
 
 import yaml
 
-from deepscale.storage.storage_client import StorageClient
 from deepscale.storage.errors import (
     CheckpointNotFoundError,
-    PersistenceError,
     RunNotFoundError,
+    StorageError,
 )
+from deepscale.storage.storage_client import StorageClient
 
 
 DEFAULT_BASE_DIR = Path(".")
@@ -88,7 +88,7 @@ class FileSystemStorageClient(StorageClient):
             try:
                 checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
             except Exception as e:
-                raise PersistenceError(
+                raise StorageError(
                     f"Failed to create artifact directory '{checkpoint_path.parent}'",
                     e,
                 )
@@ -98,7 +98,7 @@ class FileSystemStorageClient(StorageClient):
             with open(checkpoint_path, f"{mode}b") as f:
                 f.write(checkpoint)
         except Exception as e:
-            raise PersistenceError(
+            raise StorageError(
                 f"An error occurred while saving the artifact to '{checkpoint_path}'",
                 e,
             )

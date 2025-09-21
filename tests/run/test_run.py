@@ -3,14 +3,14 @@ from typing import Any
 
 import pytest
 
+from deepscale.config import Config
+from deepscale.run import Run, RunManager
 from deepscale.run.checkpoint import Checkpoint, CheckpointType
 from deepscale.storage.clients import (
     AzureBlobStorageClient,
     FileSystemStorageClient,
 )
-from deepscale.storage.errors import PersistenceError
-from deepscale.run import Run, RunManager
-from deepscale.config import Config
+from deepscale.storage.errors import StorageError
 
 
 @pytest.fixture
@@ -109,9 +109,9 @@ class TestRunManager:
             mocker.patch.object(client, "init_run")
 
         # Configure one storage client to fail
-        run_manager.storage_clients[1].init_run.side_effect = PersistenceError()
+        run_manager.storage_clients[1].init_run.side_effect = StorageError()
 
-        with pytest.raises(PersistenceError):
+        with pytest.raises(StorageError):
             run_manager.init_run(run_config)
 
         for client in run_manager.storage_clients:
@@ -152,17 +152,15 @@ class TestRunManager:
             )
 
     def test_save_checkpoint_does_not_raise_error_if_any_storage_client_fails(
-        self, mocker, run_manager, checkpoint 
+        self, mocker, run_manager, checkpoint
     ) -> None:
         for client in run_manager.storage_clients:
             mocker.patch.object(client, "save_checkpoint")
 
         # Configure one storage client to fail
-        run_manager.storage_clients[1].save_checkpoint.side_effect = PersistenceError()
+        run_manager.storage_clients[1].save_checkpoint.side_effect = StorageError()
 
         run_manager.save_checkpoint(CheckpointType.EPOCH, checkpoint)
 
         for client in run_manager.storage_clients:
             client.save_checkpoint.assert_called_once()
-
-

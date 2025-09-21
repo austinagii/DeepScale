@@ -51,7 +51,7 @@ class Checkpoint(dict):
         desired device using the `device` argument.
 
         Example:
-            >>> checkpoint = Checkpoint(key=value)
+            >>> checkpoint = Checkpoint(epoch=7, global_step=128, eval_loss=0.0103243)
             >>> bytes_data = bytes(checkpoint)
             >>> checkpoint_from_bytes = Checkpoint.from_bytes(bytes_data)
             >>> checkpoint_from_bytes == checkpoint
