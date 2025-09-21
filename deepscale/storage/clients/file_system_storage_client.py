@@ -1,3 +1,17 @@
+"""File System storage client for training artifact management.
+
+This module provides the FileSystemStorageClient class which implements the storage
+client interface for storing and retrieving training artifacts using the local file
+system.
+
+Example:
+    >>> fs_storage_client = FileSystemStorageClient("./")
+    >>> fs_storage_client.init_run("run-123", {max_epochs: 10})
+    >>> fs_storage_client.save_checkpoint(
+    >>>     "run-123", "best", Checkpoint(avg_loss=0.15324)
+    >>> )
+"""
+
 from pathlib import Path
 from typing import Any
 
@@ -17,50 +31,62 @@ RUN_CHECKPOINT_PATH_TEMPLATE = "runs/{run_id}/checkpoints/{checkpoint_tag}.pt"
 
 
 class FileSystemStorageClient(StorageClient):
-    """Manages the storage and retrieval of artifacts on the local file system.
+    """File system implementation of StorageClient.
 
-    Args:
-        base_dir: The base directory where all artifacts created by this storage
-          client will be stored and retrieved.
+    Artifacts managed by this client are stored on the local file system according to
+    the following structure:
+        {base_dir}/runs/{run_id}/config.yaml            - Training configuration (YAML)
+        {base_dir}/runs/{run_id}/checkpoints/{tag}.pt   - Model checkpoints (binary)
+
     """
 
-    def __init__(self, base_dir: str | Path = None):
+    def __init__(self, base_dir: str | Path = None) -> None:
+        """Initializes a new FileSystemStorageClient.
+
+        Args:
+            base_dir: The directory where artifacts managed by this client are to be
+                stored.
+        """
         if base_dir is None:
             base_dir = DEFAULT_BASE_DIR
 
         if isinstance(base_dir, str):
             base_dir = Path(base_dir)
 
+        # TODO: Raise error if base_diir is invalid type.
         self._base_dir = base_dir
 
-    def init_run(self, run_id: str, train_config: dict[Any, Any]) -> None:
-        train_config_file_path = self.base_dir / RUN_CONFIG_PATH_TEMPLATE.format(
+    def init_run(self, run_id: str, run_config: dict[Any, Any]) -> None:
+        """Implements :meth:`StorageClient.init_run`."""
+        run_config_file_path = self.base_dir / RUN_CONFIG_PATH_TEMPLATE.format(
             run_id=run_id
         )
 
-        train_config_file_path.parent.mkdir(parents=True, exist_ok=True)
+        # TODO: Add proper exception handling. What happens if we cant write to
+        # the specified base directory.
+        run_config_file_path.parent.mkdir(parents=True, exist_ok=True)
 
-        train_config_file_path.write_text(yaml.dump(train_config))
+        run_config_file_path.write_text(yaml.dump(run_config))
 
     def resume_run(
         self, run_id: str, checkpoint_tag: str
     ) -> tuple[dict[Any, Any], bytes]:
-        train_config_path = self.base_dir / RUN_CONFIG_PATH_TEMPLATE.format(
-            run_id=run_id
-        )
+        """Implements :meth:`StorageClient.resume_run`."""
+        run_config_path = self.base_dir / RUN_CONFIG_PATH_TEMPLATE.format(run_id=run_id)
 
-        if not train_config_path.exists():
+        if not run_config_path.exists():
             raise RunNotFoundError(f"No run with id '{run_id}' could be found.")
 
-        train_config = yaml.safe_load(train_config_path.read_text())
+        run_config = yaml.safe_load(run_config_path.read_text())
 
         checkpoint = self.load_checkpoint(run_id, checkpoint_tag)
 
-        return train_config, checkpoint
+        return run_config, checkpoint
 
     def save_checkpoint(
         self, run_id: str, checkpoint_tag: str, checkpoint: bytes
     ) -> None:
+        """Implements :meth:`StorageClient.save_checkpoint`."""
         checkpoint_path = self.base_dir / RUN_CHECKPOINT_PATH_TEMPLATE.format(
             run_id=run_id, checkpoint_tag=checkpoint_tag
         )
@@ -85,7 +111,7 @@ class FileSystemStorageClient(StorageClient):
             )
 
     def load_checkpoint(self, run_id: str, checkpoint_tag: str) -> bytes:
-        """Downloads the artifact from the local device"""
+        """Implements :meth:`StorageClient.load_checkpoint`."""
         checkpoint_path = self.base_dir / RUN_CHECKPOINT_PATH_TEMPLATE.format(
             run_id=run_id, checkpoint_tag=checkpoint_tag
         )
@@ -99,5 +125,5 @@ class FileSystemStorageClient(StorageClient):
 
     @property
     def base_dir(self):
-        """The base directory where the artifacts managed by this client are stored"""
+        """The directory where artifacts managed by this client are stored."""
         return self._base_dir

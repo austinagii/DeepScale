@@ -2,6 +2,9 @@
 markers = [
     "integration: Marks tests integration tests",
 ]
+filterwarnings = [
+    "ignore:'mode' parameter is deprecated:DeprecationWarning"
+]
 
 [tool.ruff]
 line-length = 88

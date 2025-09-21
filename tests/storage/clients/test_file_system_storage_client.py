@@ -7,11 +7,16 @@ from deepscale.storage.clients import FileSystemStorageClient
 
 @pytest.fixture
 def run_id():
+    """Generate a random run id."""
     return generate_run_id()
 
 
 @pytest.fixture
 def fs_storage_client(tmp_path):
+    """Returns a FileSystemStorageClient instance.
+
+    The provided instance uses a temporary directory as its base storage path.
+    """
     return FileSystemStorageClient(base_dir=tmp_path)
 
 
