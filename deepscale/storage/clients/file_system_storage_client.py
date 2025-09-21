@@ -49,7 +49,6 @@ class FileSystemStorageClient(StorageClient):
             run_id=run_id
         )
 
-        # breakpoint()
         if not train_config_path.exists():
             raise RunNotFoundError(f"No run with id '{run_id}' could be found.")
 
@@ -58,24 +57,6 @@ class FileSystemStorageClient(StorageClient):
         checkpoint = self.load_checkpoint(run_id, checkpoint_tag)
 
         return train_config, checkpoint
-
-    def exists(self, run_id: str, checkpoint_tag: str | None = None) -> bool:
-        run_exists = False
-        checkpoint_exists = False
-
-        expected_run_dir = self.base_dir / "runs" / run_id
-        run_exists = expected_run_dir.exists()
-
-        if run_exists and checkpoint_tag is not None:
-            expected_checkpoint_dir = (
-                self.base_dir
-                / RUN_CHECKPOINT_PATH_TEMPLATE.format(
-                    run_id=run_id, checkpoint_tag=checkpoint_tag
-                )
-            )
-            checkpoint_exists = expected_checkpoint_dir.exists()
-
-        return run_exists and (checkpoint_tag is None or checkpoint_exists)
 
     def save_checkpoint(
         self, run_id: str, checkpoint_tag: str, checkpoint: bytes

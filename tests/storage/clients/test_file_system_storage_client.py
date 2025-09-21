@@ -47,40 +47,6 @@ class TestFileSystemStorageClient:
         # Text written to disk should be the equivalent of a yaml dump of the config.
         assert expected_config_path.read_text() == yaml.dump(train_config)
 
-    def test_exists_returns_true_when_only_run_is_specified_and_run_exists(
-        self, fs_storage_client, run_id
-    ):
-        expected_run_dir = fs_storage_client.base_dir / "runs" / run_id
-        expected_run_dir.mkdir(parents=True, exist_ok=True)
-
-        assert fs_storage_client.exists(run_id)
-
-    def test_exists_returns_true_when_checkpoint_exists_in_run(
-        self, fs_storage_client, run_id
-    ):
-        expected_run_path = fs_storage_client.base_dir / "runs" / run_id
-        expected_run_path.mkdir(parents=True, exist_ok=True)
-
-        (expected_run_path / "checkpoints").mkdir(parents=True, exist_ok=True)
-        expected_checkpoint_path = expected_run_path / "checkpoints" / "test.pt"
-        expected_checkpoint_path.touch(exist_ok=True)
-
-        assert fs_storage_client.exists(run_id=run_id, checkpoint_tag="test")
-
-    def test_exists_returns_false_when_checkpoint_does_not_exist_in_run(
-        self, fs_storage_client, run_id
-    ):
-        expected_run_path = fs_storage_client.base_dir / "runs" / run_id
-        expected_run_path.mkdir(parents=True, exist_ok=True)
-
-        assert not (expected_run_path / "checkpoints" / "test.pt").exists()
-        assert not fs_storage_client.exists(run_id=run_id, checkpoint_tag="test")
-
-    def test_exists_return_false_if_run_dir_does_not_exist(
-        self, fs_storage_client, run_id
-    ):
-        assert not fs_storage_client.exists(run_id=run_id, checkpoint_tag="test")
-
     def test_save_checkpoint_creates_directory_if_it_does_not_exist(
         self, fs_storage_client, run_id
     ):
