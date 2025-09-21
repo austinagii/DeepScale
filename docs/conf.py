@@ -36,7 +36,7 @@ html_theme = 'alabaster'
 html_static_path = ['_static']
 
 # -- AutoAPI configuration --------------------------------------------------
-autoapi_dirs = ['../deepscale/persistence/clients']
+autoapi_dirs = ['../deepscale']
 autoapi_type = 'python'
 autoapi_generate_api_docs = True
 autoapi_options = [

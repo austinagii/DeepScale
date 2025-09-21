@@ -3,10 +3,10 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-DeepScale File System Storage Client Documentation
-==================================================
+DeepScale Documentation
+=======================
 
-This documentation covers the File System Storage Client module.
+DeepScale is a comprehensive framework for managing machine learning workflows, storage, and configurations.
 
 .. toctree::
    :maxdepth: 2
