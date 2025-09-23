@@ -46,7 +46,7 @@ def init_run(run_config: dict[Any, Any]) -> tuple[str, RunManager]:
 
 
 def resume_run(
-    run_id: str, checkpoint_tag: str | None = None
+    run_id: str, checkpoint_tag: str | None = None, device=None
 ) -> tuple[dict[Any, Any], Checkpoint, RunManager]:
     """Resumes the specified training run.
 
@@ -71,8 +71,11 @@ def resume_run(
     # TODO: Consider saving the dsconfig used at the time of the training run. This
     # behavior could also be overriden.
     run_manager = RunManager.from_config(Config.get_instance())
-    run_config, checkpoint = run_manager.resume_run(run_id, checkpoint_tag)
+    run_config, checkpoint = run_manager.resume_run(
+        run_id, checkpoint_tag, device=device
+    )
     return run_config, checkpoint, run_manager
+
 
 def setconf(key: str, value: Any) -> None:
     Config.get_instance()[key] = value
