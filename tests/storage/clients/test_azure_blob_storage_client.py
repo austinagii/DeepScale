@@ -1,4 +1,5 @@
 import os
+import pickle
 import random
 import string
 from collections import namedtuple
@@ -41,6 +42,26 @@ def container(blob_service_client):
     yield Container(name=container_name, client=container_client)
 
     container_client.delete_container()
+
+
+@pytest.fixture
+def container_client(container):
+    """Return a client for an ephemeral test container"""
+    _, container_client = container
+    return container_client
+
+
+@pytest.fixture
+def run_id():
+    """Return a randomly generated run id using :meth:`run.generate_run_id`."""
+    return generate_run_id()
+
+
+@pytest.fixture
+def artifact_key():
+    """Return a randomly generated artifact key."""
+    vocab = string.ascii_uppercase + string.ascii_lowercase
+    return "".join(random.choice(vocab) for _ in range(6))
 
 
 @pytest.fixture
@@ -158,6 +179,142 @@ class TestAzureBlobStorageClient:
         with pytest.raises(StorageError):
             az_storage_client.load_checkpoint("testrun", "testcheckpoint")
 
+    # -----------------------------------
+    # ------- SAVE_ARTIFACT TESTS -------
+    # -----------------------------------
+    
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "artifact", [
+            [1, 2, 3],
+            {"test": "data"}
+        ]
+    )
+    def test_save_artifact_uploads_object_to_blob_storage(
+        self, az_storage_client, container, artifact
+    ):
+        run_id = generate_run_id()
+        key = "testkey"
+        expected_blob_name = f"runs/{run_id}/{key}"
+        _, container_client = container
+        blob_client = container_client.get_blob_client(expected_blob_name)
+
+        # Verify the artifact doesn't already exist.
+        assert not blob_client.exists()
+
+        az_storage_client.save_artifact(run_id, key, artifact)
+
+        # Verify the artifact has been created.
+        assert blob_client.exists()
+        assert blob_client.get_blob_properties().size != 0
+
+    @pytest.mark.integration
+    def test_save_artifact_overwrites_existing_artifact_is_overwrite_is_true(
+        self, az_storage_client, container
+    ):
+        run_id = generate_run_id()
+        key = "testkey"
+        expected_blob_name = f"runs/{run_id}/{key}"
+        _, container_client = container
+        blob_client = container_client.get_blob_client(expected_blob_name)
+
+        # Verify the artifact doesn't already exist.
+        assert not blob_client.exists()
+
+        # Store the first version of the artifact and verify it's stored correctly.
+        original_artifact = {"data": "original"}
+        az_storage_client.save_artifact(run_id, key, original_artifact)
+
+        assert blob_client.exists()
+        reconstructed_original = pickle.loads(blob_client.download_blob().readall())
+        assert original_artifact == reconstructed_original
+
+        # Store the second version of the artifact and verify it overwrites the previous.
+        new_artifact = {"data": "new"}
+        az_storage_client.save_artifact(run_id, key, new_artifact, overwrite=True)
+
+        reconstructed_new = pickle.loads(blob_client.download_blob().readall())
+        assert reconstructed_new != original_artifact
+
+    @pytest.mark.integration
+    def test_save_artifact_raises_error_if_existing_key_and_overwrite_is_false(
+        self, az_storage_client, container_client, run_id, artifact_key
+    ):
+        blob_client = container_client.get_blob_client(f"runs/{run_id}/{artifact_key}")
+
+        # Verify the artifact doesn't already exist.
+        assert not blob_client.exists()
+
+        # Store the artifact and verify it's been store successfully.
+        artifact = {"secret_formula": "e=mc^2"}
+        az_storage_client.save_artifact(run_id, artifact_key, artifact, overwrite=False)
+
+        assert blob_client.exists()
+
+        # Attempt to overwrite the previous artifact.
+        new_artifact = {"secret_formula": "e=mc^(1/2)"}
+        with pytest.raises(KeyError):
+            az_storage_client.save_artifact(run_id, artifact_key, new_artifact, overwrite=False)
+
+        assert pickle.loads(blob_client.download_blob().readall()) == artifact
+
+    @pytest.mark.integration
+    def test_save_artifact_does_not_overwite_existing_artifacts_by_default(
+        self, az_storage_client, container_client, run_id, artifact_key
+    ):
+        blob_client = container_client.get_blob_client(f"runs/{run_id}/{artifact_key}")
+
+        assert not blob_client.exists() 
+
+        az_storage_client.save_artifact(run_id, artifact_key, ["launch", "codes"])
+        assert blob_client.exists() 
+        
+        with pytest.raises(KeyError):
+            az_storage_client.save_artifact(run_id, artifact_key, ["<redacted>"])
+
+    def test_save_artifact_raises_error_if_error_occurs_during_upload(
+        self, mocker, az_storage_client, run_id, artifact_key
+    ):
+        mocker.patch(
+            "azure.storage.blob.BlobClient.upload_blob", 
+            side_effect=Exception()
+        )
+
+        with pytest.raises(StorageError):
+            az_storage_client.save_artifact(run_id, artifact_key, tuple(["apple", 42]))
+
+    # -----------------------------------
+    # ------- LOAD_ARTIFACT TESTS -------
+    # -----------------------------------
+    
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "artifact", [
+            [1, 2, 3],
+            {"test": "data"}
+        ]
+    )
+    def test_load_artifact_downloads_object_from_blob_storage(
+        self, az_storage_client, run_id, artifact_key, artifact
+    ):
+        az_storage_client.save_artifact(run_id, artifact_key, artifact, overwrite=True)
+        assert az_storage_client.load_artifact(run_id, artifact_key) == artifact
+         
+    def test_load_artifact_returns_none_if_object_not_found(
+        self, az_storage_client, run_id, artifact_key
+    ):
+        assert az_storage_client.load_artifact(run_id, artifact_key) is None
+
+    def test_load_artifact_raises_error_if_download_fails(
+        self, mocker, az_storage_client, run_id, artifact_key
+    ):
+        mocker.patch(
+            "azure.storage.blob.BlobClient.download_blob", side_effect=Exception()
+        )
+
+        with pytest.raises(StorageError):
+            az_storage_client.load_artifact(run_id, artifact_key)
+
 
 @pytest.mark.integration
 class TestDisableTokenizerParallelism:
@@ -226,3 +383,4 @@ class TestDisableTokenizerParallelism:
             assert os.getenv("TOKENIZERS_PARALLELISM") == "false"
 
         assert os.getenv("TOKENIZERS_PARALLELISM") is None
+
