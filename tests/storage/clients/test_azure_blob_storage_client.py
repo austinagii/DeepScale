@@ -300,6 +300,7 @@ class TestAzureBlobStorageClient:
         az_storage_client.save_artifact(run_id, artifact_key, artifact, overwrite=True)
         assert az_storage_client.load_artifact(run_id, artifact_key) == artifact
          
+    @pytest.mark.integration
     def test_load_artifact_returns_none_if_object_not_found(
         self, az_storage_client, run_id, artifact_key
     ):
