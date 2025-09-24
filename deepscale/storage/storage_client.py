@@ -84,3 +84,47 @@ class StorageClient(Protocol):
             CheckpointNotFoundError: If the specified checkpoint could not be found.
         """
         ...
+
+    def save_artifact(
+        self, run_id: str, key: str, artifact: Any, overwrite: bool = False
+    ) -> None:
+        """Save an artifact for the specified training run.
+
+        The specified artifact can be an arbitrary python object. This object will be
+        serialized and stored in the storage location.
+
+        If an artifact with the specified key already exists, then the `overwrite` flag
+        will be used to determine if the previous artifact should be overwritten.
+
+        Args:
+            run_id: The unique identifier of the training run.
+            key: The key that identifies the artifact being stored.
+            artifact: The artifact to be stored.
+            overwrite: Whether to overwrite any previous artifacts with the same key.
+                Defaults to False.
+
+        Raises:
+            StorageError: If an error occurred while storing the artifact. The specific
+                error will be nested.
+            KeyError: If an artifact with the specified key already exists and
+                overwriting is not allowed.
+        """
+        ...
+
+    def load_artifact(self, run_id: str, key: str) -> Any | None:
+        """Load an artifact for the specified training run.
+
+        The object returned will be equivalent but not identical to the original object 
+        stored. i.e. the values of the properties of both objects will be the same but 
+        the ids of the objects and their properties may not be.
+
+        Args:
+            run_id: The unique identifier of the training run.
+            key: The key of the object to be loaded.
+
+        Returns:
+            Any | None: The artifact as its original type or `None` if no matching
+                artifact could be found.
+        """
+        ...
+

@@ -1,3 +1,4 @@
+import logging
 import os
 import secrets
 import string
@@ -11,16 +12,23 @@ from typing import Any
 import torch
 from azure.storage.blob import BlobServiceClient
 
-from .checkpoint import Checkpoint, CheckpointType
 from deepscale.config import Config
 from deepscale.storage.clients import (
     AzureBlobStorageClient,
     FileSystemStorageClient,
     StorageClient,
 )
-from deepscale.storage.errors import CheckpointNotFoundError, RunNotFoundError
+from deepscale.storage.errors import (
+    ArtifactNotFoundError,
+    CheckpointNotFoundError,
+    RunNotFoundError,
+    StorageError,
+)
+
+from .checkpoint import Checkpoint, CheckpointType
 
 
+LOGGER = logging.getLogger(__name__)
 MAX_THREAD_POOL_SIZE: int = 5
 
 
@@ -77,7 +85,7 @@ class RunManager:
         self,
         sources: Iterable[StorageClient],
         destinations: Iterable[StorageClient],
-        fs_base_path: str | Path = None
+        fs_base_path: str | Path = None,
     ):
         client_by_location = {
             StorageSources.AZURE_BLOB: init_azure_blob_storage_client(),
@@ -95,7 +103,7 @@ class RunManager:
         return cls(
             sources=config["runs.checkpoints.sources"],
             destinations=config["runs.checkpoints.destinations"],
-            fs_base_path=fs_base_path
+            fs_base_path=fs_base_path,
         )
 
     # This method may no longer be necessary based on usage.
@@ -136,7 +144,7 @@ class RunManager:
         return self.run.id
 
     def resume_run(
-        self, run_id: str, checkpoint_tag: str | None = None
+        self, run_id: str, checkpoint_tag: str | None = None, device=None
     ) -> tuple[dict[Any, Any], Checkpoint]:
         """Resume the specified training run.
 
@@ -166,7 +174,7 @@ class RunManager:
                 any of the configured sources.
         """
         run_config, checkpoint_bytes = None, None
-        
+
         for client in self.retrieval_clients:
             try:
                 run_config, checkpoint_bytes = client.resume_run(run_id, checkpoint_tag)
@@ -174,12 +182,12 @@ class RunManager:
             except Exception as e:
                 print(e)
                 continue
-        
+
         if run_config is None or checkpoint_bytes is None:
             raise CheckpointNotFoundError("Checkpoint could not be found")
-        
+
         self.run = Run(run_id, run_config)
-        checkpoint = Checkpoint.from_bytes(checkpoint_bytes)
+        checkpoint = Checkpoint.from_bytes(checkpoint_bytes, device=device)
         return run_config, checkpoint
 
     def save_checkpoint(
@@ -220,6 +228,102 @@ class RunManager:
             )
 
         return Checkpoint.from_bytes(checkpoint_bytes, device)
+
+    def save_artifact(
+        self,
+        key: str,
+        artifact: Any,
+        overwrite: bool = False,
+        raise_exception: bool = False,
+    ) -> None:
+        """Save an artifact for the current training run.
+
+        The specified artifact can be an arbitrary python object.
+
+        If an artifact with the specified key already exists, then the `overwrite` flag
+        will be used to determine if the previous artifact should be overwritten. If
+        `overwrite` is `False` and an artifact with the specified key already exists,
+        then an exception will be raised. If `overwrite` is `True` and an artifact with
+        the specified key already exists, then the previous artifact will be overwritten.
+
+        If `raise_exception` is `True` then this method will raise the first exception
+        that occurs while storing the artifact in the configured sources. Else, it
+        will return immediately upon initiating the storage of the artifact, ignoring
+        any exceptions that occur.
+
+        Args:
+            key: The key that identifies the artifact being stored.
+            artifact: The artifact to be stored.
+            overwrite: Whether to overwrite any previous artifacts with the same key.
+                Defaults to False.
+            raise_exception: Whether to raise an exception if an error occurs while
+                storing the artifact. Defaults to False.
+
+        Raises:
+            StorageError: If an error occurred while storing the artifact. The specific
+                error will be nested.
+        """
+        with futures.ThreadPoolExecutor(
+            max_workers=max(len(self.storage_clients), MAX_THREAD_POOL_SIZE)
+        ) as executor:
+            jobs = []
+            for client in self.storage_clients:
+                jobs.append(
+                    executor.submit(
+                        client.save_artifact,
+                        self.run.id,
+                        key,
+                        artifact,
+                        overwrite=overwrite,
+                    )
+                )
+
+            if raise_exception:
+                for job in futures.as_completed(jobs):
+                    if (exception := job.exception()) is not None:
+                        raise StorageError(
+                            "An error occurred while storing the artifact.", exception
+                        )
+
+            return
+
+    def load_artifact(self, key: str) -> Any:
+        """Load an artifact for the current training run.
+
+        The artifact will be returned as it's original type.
+
+        Args:
+            key: The key of the object to be loaded.
+
+        Returns:
+            Any | None: The artifact as its original type or `None` if no matching
+                artifact could be found.
+        """
+        artifact: Any = None
+
+        # Load the artifact from the first available source.
+        for client in self.retrieval_clients:
+            try:
+                artifact = client.load_artifact(self.run.id, key)
+            except Exception as e:
+                LOGGER.info(
+                    f"An error occurred while attempting to retrieve artifact: {key}", e
+                )
+                continue
+
+            if artifact is not None:
+                break
+
+        # If the artifact could not be found in any of the configured sources then raise 
+        # an error.
+        # TODO: Consider changing this behavior to return None. The arifact not being 
+        # found should not be an exceptional case.
+        if artifact is None:  # Do we want this behavior or just return None?
+            raise ArtifactNotFoundError(
+                f"Artifact '{key}' could not be found in the configured locations."
+            )
+
+        return artifact
 
     @staticmethod
     def _create_checkpoint_tag(
