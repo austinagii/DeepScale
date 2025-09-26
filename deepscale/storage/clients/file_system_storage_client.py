@@ -12,6 +12,7 @@ Example:
     >>> )
 """
 
+import pickle
 from pathlib import Path
 from typing import Any
 
@@ -23,10 +24,12 @@ from deepscale.storage.errors import (
     StorageError,
 )
 from deepscale.storage.storage_client import StorageClient
+from deepscale.storage.errors import StorageError
 
 
 DEFAULT_BASE_DIR = Path(".")
 RUN_CONFIG_PATH_TEMPLATE = "runs/{run_id}/config.yaml"
+RUN_ARTIFACT_PATH_TEMPLATE = "runs/{run_id}/artifacts/{key}"
 RUN_CHECKPOINT_PATH_TEMPLATE = "runs/{run_id}/checkpoints/{checkpoint_tag}.pt"
 
 
@@ -122,6 +125,50 @@ class FileSystemStorageClient(StorageClient):
             )
 
         return checkpoint_path.read_bytes()
+
+    def save_artifact(
+        self, run_id: str, key: str, artifact: Any, overwrite: bool = False
+    ) -> None:
+        """Save an artifact for the specified training run to the local file system.
+
+        The artifact can be any arbitrary Python object. It will be serialized usiing the
+        `pickle` module and stored as a file on the local file system at:
+            "{base_dir}/runs/{run_id}/artifacts/{key}"
+
+        Implements :meth:`StorageClient.save_artifact`.
+        """
+        artifact_path = ( 
+            self.base_dir / RUN_ARTIFACT_PATH_TEMPLATE.format(run_id=run_id, key=key)
+        )
+
+        if not overwrite and artifact_path.exists():
+            raise KeyError(f"An artifact with key '{key}' already exists.")
+
+        try:
+            artifact_path.parent.mkdir(parents=True, exist_ok=True)
+            artifact_path.write_bytes(pickle.dumps(artifact))
+        except Exception as e:
+            raise StorageError("An error occurred while saving the artifact", e)
+
+    def load_artifact(self, run_id: str, key: str) -> Any | None:
+        """Load an artifact for the specified training run from the local file system.
+
+        The artifact will be loaded from the file system and reconstructed to its
+        original type using the `pickle` module.
+
+        Implements :meth:`StorageClient.load_artifact`.
+        """
+        artifact_path = (
+            self.base_dir / RUN_ARTIFACT_PATH_TEMPLATE.format(run_id=run_id, key=key)
+        )
+
+        if not artifact_path.exists():
+            return None
+
+        try:
+            return pickle.loads(artifact_path.read_bytes())
+        except Exception as e:
+            raise StorageError("An error occurred while loading the artifact", e)
 
     @property
     def base_dir(self):
