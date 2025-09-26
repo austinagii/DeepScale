@@ -1,9 +1,10 @@
-import pytest
-import yaml
 import pickle
-import random 
+import random
 import string
 from pathlib import Path
+
+import pytest
+import yaml
 
 from deepscale.run import generate_run_id
 from deepscale.storage.clients import FileSystemStorageClient
@@ -16,11 +17,13 @@ def run_id():
     """Generate a random run id."""
     return generate_run_id()
 
+
 @pytest.fixture
 def artifact_key():
-    """Generate a random artifact key.""" 
+    """Generate a random artifact key."""
     vocab = string.ascii_uppercase + string.ascii_lowercase
     return "".join([random.choice(vocab) for _ in range(6)])
+
 
 @pytest.fixture
 def fs_storage_client(tmp_path):
@@ -130,10 +133,11 @@ class TestFileSystemStorageClient:
     # ===============================
     @pytest.mark.integration
     @pytest.mark.parametrize(
-        "artifact", [
+        "artifact",
+        [
             {"best_snack": "kit-kat"},
-            ["San Francisco", "Tokyo", "Medellin", "Vancouver"]
-        ]
+            ["San Francisco", "Tokyo", "Medellin", "Vancouver"],
+        ],
     )
     def test_save_artifact_writes_artifact_to_file_system(
         self, fs_storage_client, run_id, artifact_key, artifact
@@ -162,7 +166,7 @@ class TestFileSystemStorageClient:
         assert pickle.loads(expected_artifact_path.read_bytes()) == artifact
 
         # Attempt to overwrite the artifact.
-        new_artifact = ("Sam Altman")
+        new_artifact = "Sam Altman"
 
         fs_storage_client.save_artifact(
             run_id, artifact_key, new_artifact, overwrite=True
@@ -186,7 +190,7 @@ class TestFileSystemStorageClient:
         fs_storage_client.save_artifact(run_id, artifact_key, artifact)
 
         # Verify that an error occurrs when attempting to overwrite.
-        new_artifact = ("Sam Altman")
+        new_artifact = "Sam Altman"
         with pytest.raises(KeyError):
             fs_storage_client.save_artifact(
                 run_id, artifact_key, new_artifact, overwrite=False
@@ -206,7 +210,7 @@ class TestFileSystemStorageClient:
         fs_storage_client.save_artifact(run_id, artifact_key, artifact)
 
         # Verify that an error occurrs when writing with same key.
-        new_artifact = ("Sam Altman")
+        new_artifact = "Sam Altman"
         with pytest.raises(KeyError):
             fs_storage_client.save_artifact(run_id, artifact_key, new_artifact)
 
@@ -223,11 +227,12 @@ class TestFileSystemStorageClient:
     # ===============================
     @pytest.mark.integration
     @pytest.mark.parametrize(
-        "artifact", [
+        "artifact",
+        [
             {"best_snack": "kit-kat"},
             ["San Francisco", "Tokyo", "Medellin", "Vancouver"],
-            ("Sam Altman", "Ilya Sutskever", "Dario Amodei", "Mira Murati")
-        ]
+            ("Sam Altman", "Ilya Sutskever", "Dario Amodei", "Mira Murati"),
+        ],
     )
     def test_load_artifact_reads_artifact_from_file_system(
         self, fs_storage_client, run_id, artifact_key, artifact
@@ -275,7 +280,7 @@ class TestFileSystemStorageClient:
         original_artifact = {
             "model_params": {"lr": 0.001, "batch_size": 32},
             "metrics": [0.95, 0.97, 0.98],
-            "metadata": ("experiment", "version_1")
+            "metadata": ("experiment", "version_1"),
         }
 
         # Save the artifact using save_artifact
@@ -290,4 +295,3 @@ class TestFileSystemStorageClient:
         assert loaded_artifact["model_params"] == original_artifact["model_params"]
         assert loaded_artifact["metrics"] == original_artifact["metrics"]
         assert loaded_artifact["metadata"] == original_artifact["metadata"]
-        

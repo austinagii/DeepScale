@@ -7,7 +7,8 @@ from .run import Checkpoint, RunManager
 
 
 DEFAULT_DSCONFIG_PATH = "./deepscale.yaml"
-DS_CONFIG: Config = None
+DS_CONFIG: Config | None = None
+
 
 logging.basicConfig(
     level=logging.INFO,

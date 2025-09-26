@@ -24,7 +24,6 @@ from deepscale.storage.errors import (
     StorageError,
 )
 from deepscale.storage.storage_client import StorageClient
-from deepscale.storage.errors import StorageError
 
 
 DEFAULT_BASE_DIR = Path(".")
@@ -137,8 +136,8 @@ class FileSystemStorageClient(StorageClient):
 
         Implements :meth:`StorageClient.save_artifact`.
         """
-        artifact_path = ( 
-            self.base_dir / RUN_ARTIFACT_PATH_TEMPLATE.format(run_id=run_id, key=key)
+        artifact_path = self.base_dir / RUN_ARTIFACT_PATH_TEMPLATE.format(
+            run_id=run_id, key=key
         )
 
         if not overwrite and artifact_path.exists():
@@ -158,8 +157,8 @@ class FileSystemStorageClient(StorageClient):
 
         Implements :meth:`StorageClient.load_artifact`.
         """
-        artifact_path = (
-            self.base_dir / RUN_ARTIFACT_PATH_TEMPLATE.format(run_id=run_id, key=key)
+        artifact_path = self.base_dir / RUN_ARTIFACT_PATH_TEMPLATE.format(
+            run_id=run_id, key=key
         )
 
         if not artifact_path.exists():
