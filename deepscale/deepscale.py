@@ -6,8 +6,7 @@ from .config import Config
 from .run import Checkpoint, RunManager
 
 
-DEFAULT_DSCONFIG_PATH = "./deepscale.yaml"
-DS_CONFIG: Config | None = None
+DS_CONFIG_PATH = "./deepscale.yaml"
 
 
 logging.basicConfig(
@@ -17,17 +16,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-
-
-def init(ds_config_path: str | Path = DEFAULT_DSCONFIG_PATH) -> None:
-    if isinstance(ds_config_path, str):
-        ds_config_path = Path(ds_config_path)
-
-    if not isinstance(ds_config_path, Path):
-        raise TypeError(f"Expected a str or path, got {type(ds_config_path.__name__)}")
-
-    # TODO: Consider having a default config.
-    Config.from_yaml(ds_config_path, override=True)
 
 
 def init_run(run_config: dict[Any, Any]) -> tuple[str, RunManager]:
@@ -41,6 +29,9 @@ def init_run(run_config: dict[Any, Any]) -> tuple[str, RunManager]:
             - The unique ID of the newly created run.
             - The `RunManager` instance that manages the newly created run.
     """
+    if not Config.is_initialized():
+        Config.from_yaml(DS_CONFIG_PATH)
+
     run_manager = RunManager.from_config(Config.get_instance())
     run_id = run_manager.init_run(run_config)
     return run_id, run_manager
@@ -69,6 +60,9 @@ def resume_run(
         RunNotFoundError: If the specified run could not be found.
         CheckpointNotFoundError: If the specified checkpoint could not be found.
     """
+    if not Config.is_initialized():
+        Config.from_yaml(DS_CONFIG_PATH)
+
     # TODO: Consider saving the dsconfig used at the time of the training run. This
     # behavior could also be overriden.
     run_manager = RunManager.from_config(Config.get_instance())
@@ -80,3 +74,7 @@ def resume_run(
 
 def setconf(key: str, value: Any) -> None:
     Config.get_instance()[key] = value
+
+
+def set_config_path(ds_config_path: str | Path) -> None:
+    pass

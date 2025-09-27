@@ -1,6 +1,5 @@
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import yaml
 
@@ -9,21 +8,22 @@ SUBKEY_SEPARATOR = "."
 
 
 class Config:
-    """Configuration for the DeepScale module"""
+    """Configuration for the DeepScale module."""
+
     _instance = None
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    def __init__(self, data: dict[str, Any], override=False):
-        if not hasattr(self, '_initialized') or override:  # Prevent re-initialization
-            self.data = data
-            self._initialized = True
+    @classmethod
+    def is_initialized(cls) -> bool:
+        """Whether the configuration has been initialized."""
+        return (
+            cls._instance is not None
+            and hasattr(cls._instance, "_initialized")
+            and cls._instance._initialized
+        )
 
     @classmethod
     def get_instance(cls):
+        """Return the Config singleton."""
         return cls._instance
 
     @classmethod
@@ -42,6 +42,25 @@ class Config:
             config = yaml.safe_load(f)
 
         return cls(config, override)
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self, data: dict[str, Any], override=False):
+        if not hasattr(self, "_initialized") or override:  # Prevent re-initialization
+            self.data = data
+            self._initialized = True
+
+    def get(self, key: str) -> Any:
+        value = None
+        try:
+            value = self.__getitem__(key)
+        except KeyError:
+            pass
+
+        return value
 
     def __getitem__(self, key: str):
         if not isinstance(key, str) or len(key) == 0:
@@ -71,18 +90,8 @@ class Config:
                 next_obj = obj[component]
 
             obj = next_obj
-                 
 
         obj[key_components[len(key_components) - 1]] = value
-
-    def get(self, key: str) -> Any:
-        value = None
-        try: 
-            value = self.__getitem__(key)
-        except KeyError:
-            pass
-
-        return value
 
     def __str__(self):
         return yaml.dump(self.config, default_flow_style=False)

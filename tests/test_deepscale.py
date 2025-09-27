@@ -9,6 +9,7 @@ from torchvision import datasets
 from torchvision.transforms import ToTensor
 
 import deepscale as ds
+from deepscale.config import Config
 from deepscale.run import Checkpoint, generate_run_id
 
 
@@ -58,7 +59,7 @@ def train(model, data):
 
 
 @pytest.fixture
-def dsconfig_path(tmp_path):
+def ds_config_path(tmp_path):
     config = """
     runs:
         checkpoints:
@@ -127,15 +128,16 @@ def paused_run(tmp_path, run_config):
 class TestDeepScale:
     # TODO: Add checkpoint run cleanup after each test.
     @pytest.mark.integration
-    def test_new_run_can_be_started(self, dsconfig_path, run_config, data):
-        ds.init(dsconfig_path)
+    def test_new_run_can_be_started(self, ds_config_path, tmp_path, run_config, data):
+        Config.from_yaml(ds_config_path, override=True)
+        Config.get_instance()["storage.clients.filesystem.basedir"] = tmp_path
 
         _, run_manager = ds.init_run(run_config)
         model = Model(
             layer_sizes=run_config["model"]["layer_sizes"],
             learning_rate=run_config["optimizer"]["learning_rate"],
         )
-            
+
         for epoch in range(10):
             avg_loss = train(model, data)
 
@@ -145,9 +147,11 @@ class TestDeepScale:
             run_manager.save_checkpoint(ds.CheckpointType.EPOCH, checkpoint)
 
     @pytest.mark.integration
-    def test_previous_training_run_can_be_resumed(self, tmp_path, dsconfig_path, paused_run, data):
-        ds.init(dsconfig_path)
-        ds.setconf("storage.clients.filesystem.basedir", tmp_path)
+    def test_previous_training_run_can_be_resumed(
+        self, tmp_path, ds_config_path, paused_run, data
+    ):
+        Config.from_yaml(ds_config_path, override=True)
+        Config.get_instance()["storage.clients.filesystem.basedir"] = tmp_path
 
         run_config, checkpoint, run_manager = ds.resume_run(*paused_run)
 
@@ -168,9 +172,11 @@ class TestDeepScale:
             run_manager.save_checkpoint(ds.CheckpointType.EPOCH, checkpoint)
 
     @pytest.mark.integration
-    def test_previous_training_run_can_be_resumed_after_saving(self, tmp_path, dsconfig_path, run_config, data):
-        ds.init(dsconfig_path)
-        ds.setconf("storage.clients.filesystem.basedir", tmp_path)
+    def test_previous_training_run_can_be_resumed_after_saving(
+        self, tmp_path, ds_config_path, run_config, data
+    ):
+        Config.from_yaml(ds_config_path, override=True)
+        Config.get_instance()["storage.clients.filesystem.basedir"] = tmp_path
 
         run_id, run_manager = ds.init_run(run_config)
 
@@ -178,18 +184,18 @@ class TestDeepScale:
             layer_sizes=run_config["model"]["layer_sizes"],
             learning_rate=run_config["optimizer"]["learning_rate"],
         )
-            
+
         # Do some initial training before we pause training.
         for epoch in range(5):
             avg_loss = train(model, data)
 
-        checkpoint = Checkpoint(
-            epoch=epoch, loss=avg_loss, model=model.state_dict()
-        )
+        checkpoint = Checkpoint(epoch=epoch, loss=avg_loss, model=model.state_dict())
         run_manager.save_checkpoint(ds.CheckpointType.EPOCH, checkpoint)
 
         # Now resume the saved run.
-        loaded_run_config, loaded_checkpoint, run_manager = ds.resume_run(run_id, "epoch:0004")
+        loaded_run_config, loaded_checkpoint, run_manager = ds.resume_run(
+            run_id, "epoch:0004"
+        )
 
         loaded_model = Model(
             layer_sizes=loaded_run_config["model"]["layer_sizes"],
@@ -205,14 +211,15 @@ class TestDeepScale:
         for (name, original_param), (loaded_name, loaded_param) in zip(
             model.named_parameters(), loaded_model.named_parameters()
         ):
-            assert name == loaded_name, f"Parameter names don't match: {name} != {loaded_name}"
-            assert torch.allclose(original_param, loaded_param), f"Parameter {name} values don't match"
+            assert name == loaded_name, (
+                f"Parameter names don't match: {name} != {loaded_name}"
+            )
+            assert torch.allclose(original_param, loaded_param), (
+                f"Parameter {name} values don't match"
+            )
 
         for epoch in range(loaded_checkpoint.epoch, 10):
             avg_loss = train(model, data)
 
-        checkpoint = Checkpoint(
-            epoch=epoch, loss=avg_loss, model=model.state_dict()
-        )
+        checkpoint = Checkpoint(epoch=epoch, loss=avg_loss, model=model.state_dict())
         run_manager.save_checkpoint(ds.CheckpointType.FINAL, checkpoint)
-
