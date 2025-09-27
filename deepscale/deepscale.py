@@ -1,5 +1,4 @@
 import logging
-from pathlib import Path
 from typing import Any
 
 from .config import Config
@@ -70,11 +69,3 @@ def resume_run(
         run_id, checkpoint_tag, device=device
     )
     return run_config, checkpoint, run_manager
-
-
-def setconf(key: str, value: Any) -> None:
-    Config.get_instance()[key] = value
-
-
-def set_config_path(ds_config_path: str | Path) -> None:
-    pass
